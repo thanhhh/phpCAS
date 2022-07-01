@@ -2131,7 +2131,7 @@ class CAS_Client
      */
     public function setCasServerCACert($cert, $validate_cn)
     {
-    // Argument validation
+        // Argument validation
         if (gettype($cert) != 'string') {
             throw new CAS_TypeMismatchException($cert, '$cert', 'string');
         }
@@ -2153,6 +2153,29 @@ class CAS_Client
     public function setNoCasServerValidation()
     {
         $this->_no_cas_server_validation = true;
+    }
+
+     /**
+     * @var  string the private key to decrypt proxy granting ticket
+     *
+     * @hideinitializer
+     */
+    private $_proxy_private_key = null;
+
+    /**
+     * Set the RSA private key to decrypt proxy granting ticket that public key is provided for CAS Server
+     * @param string $privateKey The PEM private key file name
+     */
+    public function setProxyPrivateKey($privateKey)
+    {
+        // Argument validation
+        if (gettype($privateKey) != 'string') {
+            throw new CAS_TypeMismatchException($privateKey, '$privateKey', 'string');
+        }
+        if (!file_exists($privateKey)) {
+            throw new CAS_InvalidArgumentException("The private key file does not exist " . $this->_requestImplementation);
+        }
+        $this->_proxy_private_key = $privateKey;
     }
 
     /**
@@ -2864,17 +2887,21 @@ class CAS_Client
             $pgt_iou = trim(
                 $tree_response->getElementsByTagName("proxyGrantingTicket")->item(0)->nodeValue
             );
-            if (preg_match('/^PGTIOU-[\.\-\w]+$/', $pgt_iou)) {
-                $pgt = $this->_loadPGT($pgt_iou);
-                if ( $pgt == false ) {
-                    phpCAS::trace('could not load PGT');
-                    throw new CAS_AuthenticationException(
-                        $this,
-                        'PGT Iou was transmitted but PGT could not be retrieved',
-                        $validate_url, false/*$no_response*/,
-                        false/*$bad_response*/, $text_response
-                    );
-                }
+
+            $decryptedPtg = $this->_decryptTicket($pgt_iou);
+
+            if (preg_match('/^PGT-[\.\-\w]+$/', $decryptedPtg)) {
+                $pgt = $decryptedPtg;
+                // $pgt = $this->_loadPGT($decryptedPtg);
+                // if ( $pgt == false ) {
+                //     phpCAS::trace('could not load PGT');
+                //     throw new CAS_AuthenticationException(
+                //         $this,
+                //         'PGT Iou was transmitted but PGT could not be retrieved',
+                //         $validate_url, false/*$no_response*/,
+                //         false/*$bad_response*/, $text_response
+                //     );
+                // }
                 $this->_setPGT($pgt);
             } else {
                 phpCAS::trace('PGTiou format error');
@@ -2887,6 +2914,35 @@ class CAS_Client
         }
         phpCAS::traceEnd(true);
         return true;
+    }
+
+    private function _decryptTicket($cryptText) {
+        $plainText = null;
+        phpCAS::traceBegin();
+        if (empty($this->_proxy_private_key)) {
+            phpCAS::error(
+                'The method phpCAS::setProxyPrivateKey() must be called to set proxy private key that public key provided for CAS server.'
+            );
+        }
+
+        if (empty($cryptText)) {
+            phpCAS::error(
+                'The crypted text is null or empty.'
+            );
+        }
+
+
+        $fp = fopen($this->_proxy_private_key, 'r');
+        $priv_key=fread($fp, 8192);
+        fclose($fp);
+
+        $private = openssl_get_privatekey($priv_key);
+
+        openssl_private_decrypt(base64_decode($cryptText), $plainText, $private, OPENSSL_PKCS1_PADDING);
+
+        phpCAS::traceEnd(true);
+
+        return $plainText;
     }
 
     // ########################################################################

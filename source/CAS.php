@@ -1689,6 +1689,27 @@ class phpCAS
         phpCAS :: traceEnd();
     }
 
+    /**
+     * Set the proxy private key to decrypt proxy granting ticket that CAS server encrypted ticket with public key
+     * verified.
+     *
+     * @param string $privateKey       The private key file
+     *
+     * @return void
+     */
+    public static function setProxyPrivateKey($privateKey)
+    {
+        phpCAS :: traceBegin();
+        phpCAS::_validateClientExists();
+
+        try {
+            self::$_PHPCAS_CLIENT->setProxyPrivateKey($privateKey);
+        } catch (Exception $e) {
+            phpCAS :: error(get_class($e) . ': ' . $e->getMessage());
+        }
+
+        phpCAS :: traceEnd();
+    }
 
     /**
      * Disable the removal of a CAS-Ticket from the URL when authenticating
